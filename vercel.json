@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --include=dev",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "env": {
+    "VITE_GROQ_API_KEY": "@VITE_GROQ_API_KEY",
+    "VITE_OPENWEATHER_API_KEY": "@VITE_OPENWEATHER_API_KEY"
+  }
+}
