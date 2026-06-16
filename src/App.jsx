@@ -1,8 +1,10 @@
 import { callGemini } from './gemini';
 import React, { useState, useEffect, useRef } from 'react';
+import * as Recharts from 'recharts';
 import './styles.css';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, writeBatch, getDocs, query, orderBy, where } from "firebase/firestore";
 import { db } from "./firebase";
+import bcrypt from 'bcryptjs';
 
 import Modal, { Prog, Confirm, AiDots, Ring } from './CustomComponents';
 import { today, fmtDate, fmtNum } from './utils';
@@ -22,9 +24,90 @@ import ProductManagementPage from './pages/ProductManagementPage';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import QRManagementPage from './pages/QRManagementPage';
 
+// Phase 2 – Offline Sync imports
 import SyncStatusIndicator from './components/SyncStatusIndicator';
 import { startSync, stopSync } from './services/syncEngine';
 
+/* ═══════════════════════════════════════════════════
+   CONSTANTS & HELPERS
+══════════════════════════════════════════════════ */
+
+const SALT_ROUNDS = 10;
+
+/* ═══════════════════════════════════════════════════
+   SEED DATA
+══════════════════════════════════════════════════ */
+const SEED_WORKERS = [
+  { id: 1, name: "Murugan", gender: "male", phone: "9876543210", salary: 500, role: "Field Worker", joined: "2026-01-10", active: true },
+  { id: 2, name: "Selvi", gender: "female", phone: "9876543211", salary: 450, role: "Harvester", joined: "2026-01-12", active: true },
+  { id: 3, name: "Rajan", gender: "male", phone: "9876543212", salary: 500, role: "Irrigation", joined: "2026-02-01", active: true },
+  { id: 4, name: "Meena", gender: "female", phone: "9876543213", salary: 450, role: "Harvester", joined: "2026-02-05", active: true },
+  { id: 5, name: "Pandi", gender: "male", phone: "9876543214", salary: 550, role: "Supervisor", joined: "2026-01-05", active: true },
+];
+const SEED_SCHEDULE = [
+  { id: 1, date: "2026-06-10", drip: "12:61:00 MAP (1.5-2 kg)", spray: "ஏதுமில்லை", field: "அறுவடை", note: "பாஸ்பரஸ் குறைபாடு தீர்வு", type: "harvest", done: false },
+  { id: 2, date: "2026-06-11", drip: "கட்டுப்படுத்தப்பட்ட பாசனம்", spray: "Boron 20% (100g/100L)", field: "கண்காணிப்பு", note: "சர்க்கரை அளவு கூட்ட", type: "monitor", done: false },
+  { id: 3, date: "2026-06-12", drip: "SOP 0:00:50 (1.5-2 kg)", spray: "ஏதுமில்லை", field: "அறுவடை", note: "Brix & எடை கூட்ட", type: "harvest", done: false },
+  { id: 4, date: "2026-06-13", drip: "கட்டுப்படுத்தப்பட்ட பாசனம்", spray: "ONDA (200ml) + COLORE (250g)", field: "QR பதிவு & இலை கத்தரிப்பு", note: "அடர் சிவப்பு நிறம் & நறுமணம்", type: "spray", done: false },
+  { id: 5, date: "2026-06-14", drip: "Ascophyllum nodosum", spray: "ஏதுமில்லை", field: "ஓய்வு / கண்காணிப்பு", note: "வேர் செயல்பாடு மேம்பட", type: "rest", done: false },
+  { id: 6, date: "2026-06-15", drip: "கட்டுப்படுத்தப்பட்ட பாசனம்", spray: "Spintor/Tracer (35ml/100L)", field: "அறுவடை", note: "பூச்சி கட்டுப்பாடு", type: "harvest", done: false },
+  { id: 7, date: "2026-06-16", drip: "SOP 0:00:50 (1.5-2 kg)", spray: "NIXI Calcium (150ml/100L)", field: "கண்காணிப்பு", note: "பழத்தோல் கெட்டிப்படுத்த", type: "monitor", done: false },
+  { id: 8, date: "2026-06-17", drip: "12:61:00 MAP (1.5-2 kg)", spray: "ஏதுமில்லை", field: "அறுவடை", note: "2ஆம் தவணை மீட்பு", type: "harvest", done: false },
+  { id: 9, date: "2026-06-18", drip: "கட்டுப்படுத்தப்பட்ட பாசனம்", spray: "Boron 20% (100g/100L)", field: "கண்காணிப்பு", note: "சீரான வடிவம் & சர்க்கரை", type: "monitor", done: false },
+  { id: 10, date: "2026-06-19", drip: "Minsol 13:00:45 (1.5 kg)", spray: "ஏதுமில்லை", field: "அறுவடை", note: "இலை தழை அமைப்பு பராமரிக்க", type: "harvest", done: false },
+];
+const SEED_CUSTOMERS = [
+  { id: 1, name: "Priya Stores", phone: "9876501111", location: "Kodaikanal", type: "premium", since: "2026-03-01", orders: [{ id: 101, date: "2026-05-10", boxes: 50 }, { id: 102, date: "2026-05-20", boxes: 80 }, { id: 103, date: "2026-06-01", boxes: 100 }] },
+  { id: 2, name: "Kumar Fruits", phone: "9876502222", location: "Madurai", type: "regular", since: "2026-04-10", orders: [{ id: 104, date: "2026-05-15", boxes: 20 }, { id: 105, date: "2026-06-01", boxes: 25 }] },
+  { id: 3, name: "Anbu Supermarket", phone: "9876503333", location: "Coimbatore", type: "premium", since: "2026-02-15", orders: [{ id: 106, date: "2026-04-20", boxes: 120 }, { id: 107, date: "2026-05-25", boxes: 150 }, { id: 108, date: "2026-06-05", boxes: 200 }] },
+  { id: 4, name: "Devi Hotel", phone: "9876504444", location: "Dindigul", type: "regular", since: "2026-05-01", orders: [{ id: 109, date: "2026-06-02", boxes: 15 }] },
+];
+const genSeeds = (n) => Array.from({ length: n }, (_, i) => ({
+  id: i + 1,
+  flowers: Math.floor(Math.random() * 8),
+  greenFruits: Math.floor(Math.random() * 6),
+  redFruits: Math.floor(Math.random() * 4),
+  defect: Math.random() < 0.18 ? ["slug damage", "leaf curl", "grey mould", "aphids", "caterpillar"][Math.floor(Math.random() * 5)] : "",
+  yieldGrams: Math.floor(Math.random() * 280 + 60),
+  notes: ""
+}));
+
+/* ═══════════════════════════════════════════════════
+   AUTH CONTEXT & LOGIN (SECURE WITH BCRYPT)
+══════════════════════════════════════════════════ */
+const AUTH = {
+  getUsers: () => {
+    try {
+      const v = localStorage.getItem("auth_users");
+      return v != null ? JSON.parse(v) : [
+        { id: 1, username: "superadmin", password: bcrypt.hashSync("admin123", SALT_ROUNDS), role: "superadmin", name: "Super Admin", createdAt: "2026-01-01" }
+      ];
+    } catch { return []; }
+  },
+  setUsers: (u) => {
+    const hashedUsers = u.map(user => ({
+      ...user,
+      password: bcrypt.hashSync(user.password, SALT_ROUNDS)
+    }));
+    try { localStorage.setItem("auth_users", JSON.stringify(hashedUsers)); } catch { }
+  },
+  getSession: () => {
+    try {
+      const v = localStorage.getItem("auth_session");
+      return v != null ? JSON.parse(v) : null;
+    } catch { return null; }
+  },
+  setSession: (s) => {
+    try { localStorage.setItem("auth_session", JSON.stringify(s)); } catch { }
+  },
+  logout: () => {
+    try { localStorage.removeItem("auth_session"); } catch { }
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   WEATHER
+══════════════════════════════════════════════════ */
 const WEATHER_API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY || "YOUR_OPENWEATHER_API_KEY";
 const WEATHER_CITY = "Kodaikanal";
 
@@ -46,40 +129,9 @@ const fetchWeather = async () => {
   } catch { return null; }
 };
 
-const AUTH = {
-  getUsers: () => {
-    try {
-      const v = localStorage.getItem("auth_users");
-      if (v) return JSON.parse(v);
-    } catch {}
-    const defaultAdmin = {
-      id: 1,
-      username: "superadmin",
-      password: "admin123",
-      role: "superadmin",
-      name: "Super Admin",
-      createdAt: today()
-    };
-    localStorage.setItem("auth_users", JSON.stringify([defaultAdmin]));
-    return [defaultAdmin];
-  },
-  setUsers: (u) => {
-    try { localStorage.setItem("auth_users", JSON.stringify(u)); } catch {}
-  },
-  getSession: () => {
-    try {
-      const v = localStorage.getItem("auth_session");
-      return v ? JSON.parse(v) : null;
-    } catch { return null; }
-  },
-  setSession: (s) => {
-    try { localStorage.setItem("auth_session", JSON.stringify(s)); } catch {}
-  },
-  logout: () => {
-    try { localStorage.removeItem("auth_session"); } catch {}
-  }
-};
-
+/* ═══════════════════════════════════════════════════
+   ROOT APP
+══════════════════════════════════════════════════ */
 const App = () => {
   const [auth, setAuth] = useState(null);
   const [page, setPage] = useState("dashboard");
@@ -102,6 +154,7 @@ const App = () => {
   const [adminForm, setAdminForm] = useState({ username: "", password: "", name: "", role: "admin" });
   const [adminErr, setAdminErr] = useState("");
 
+  // Initialize sync engine when auth is ready
   useEffect(() => {
     if (auth) {
       startSync();
@@ -109,13 +162,26 @@ const App = () => {
     }
   }, [auth]);
 
+  const seedData = async () => {
+    try {
+      const workersSnap = await getDocs(collection(db, "workers"));
+      if (workersSnap.empty) {
+        const batch = writeBatch(db);
+        SEED_WORKERS.forEach(w => batch.set(doc(db, "workers", w.id.toString()), w));
+        SEED_SCHEDULE.forEach(s => batch.set(doc(db, "schedule", s.id.toString()), s));
+        SEED_CUSTOMERS.forEach(c => batch.set(doc(db, "customers", c.id.toString()), c));
+        batch.set(doc(db, "plants", "master"), { items: genSeeds(50) });
+        await batch.commit();
+        console.log("🌱 Seed data added to Firestore!");
+      }
+    } catch (e) { console.error("Seed error:", e); }
+  };
+
   useEffect(() => {
     const session = AUTH.getSession();
-    if (session) {
-      setAuth(session);
-    } else {
-      setLoginModal(true);
-    }
+    if (session) setAuth(session);
+    else setLoginModal(true);
+    seedData();
   }, []);
 
   useEffect(() => {
@@ -140,6 +206,17 @@ const App = () => {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "schedule"), (snap) => {
       setSchedule(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "plants", "master"), (snap) => {
+      if (snap.exists()) {
+        setPlants(snap.data().items || []);
+      } else {
+        setPlants(genSeeds(50));
+      }
     });
     return () => unsub();
   }, []);
@@ -172,54 +249,18 @@ const App = () => {
     return () => unsub();
   }, []);
 
-  const td = today();
-  const newDefectCnt = defects.filter(d => !d.seen).length;
-  const plantDate = new Date("2026-03-10");
-  const dayNum = Math.max(1, Math.floor((Date.now() - plantDate.getTime()) / 86400000) + 1);
-
-  const NAV = [
-    { id: "dashboard", icon: "📊", label: "Dashboard" },
-    { sec: "பண்ணை மேலாண்மை" },
-    { id: "workers", icon: "👷", label: "Workers" },
-    { id: "attendance", icon: "📅", label: "Attendance" },
-    { id: "schedule", icon: "📋", label: "Daily Schedule" },
-    { id: "fertiliser", icon: "🧪", label: "Fertiliser & Pest" },
-    { sec: "கண்காணிப்பு" },
-    { id: "fields", icon: "🌾", label: "Fields & Crops" },
-    { id: "crop", icon: "🌱", label: "Crop Monitoring" },
-    { id: "reports", icon: "🚨", label: "Worker Reports", badge: newDefectCnt },
-    { sec: "வணிகம்" },
-    { id: "customers", icon: "🛒", label: "Customers" },
-    { sec: "நிர்வாகம்" },
-    { id: "products", icon: "🧪", label: "Products" },
-    { id: "weekly", icon: "📅", label: "Weekly Planner" },
-    { id: "admins", icon: "👤", label: "Admin Management" },
-    { id: "bills", icon: "📄", label: "Bill Management" },
-    { id: "qrmanagement", icon: "📱", label: "QR Management" },
-  ];
-
-  const TITLES = {
-    dashboard: "📊 Overview Dashboard",
-    workers: "👷 Worker Management",
-    attendance: "📅 Attendance Tracking",
-    schedule: "📋 Daily Schedule",
-    fertiliser: "🧪 Fertiliser & Pest Management",
-    crop: "🌱 Crop Monitoring",
-    reports: "🚨 Worker Field Reports",
-    customers: "🛒 Customer Management",
-    admins: "👤 Admin Management",
-    bills: "📄 Bill Management",
-    fields: "🌾 Field & Row Management",
-    products: "🧪 Product Management",
-    weekly: "📅 Weekly Planner",
-    qrmanagement: "📱 QR Management"
-  };
-
-  const nav = (p) => { setPage(p); setSbOpen(false); };
+  useEffect(() => {
+    if (auth) {
+      setWeatherLoading(true);
+      fetchWeather().then(d => { setWeather(d);
+        setWeatherLoading(false); });
+    }
+  }, [auth]);
 
   const handleLogin = () => {
     const users = AUTH.getUsers();
-    const found = users.find(u => u.username === loginForm.username && u.password === loginForm.password);
+    // SECURE: Compare password using bcrypt
+    const found = users.find(u => u.username === loginForm.username && bcrypt.compareSync(loginForm.password, u.password));
     if (found) {
       const session = { id: found.id, username: found.username, role: found.role, name: found.name };
       AUTH.setSession(session);
@@ -256,46 +297,86 @@ const App = () => {
       name: adminForm.name,
       createdAt: today()
     };
-    const updatedUsers = [...users, newUser];
-    AUTH.setUsers(updatedUsers);
-    setAdminUsers(updatedUsers);
+    setAdminUsers([...users, newUser]);
     setAdminModal(false);
     setAdminForm({ username: "", password: "", name: "", role: "admin" });
     setAdminErr("");
   };
 
   const deleteAdmin = (id) => {
-    if (id === auth?.id) {
-      alert("You cannot delete yourself!");
-      return;
-    }
+    if (id === auth?.id) { alert("You cannot delete yourself!"); return; }
     const users = AUTH.getUsers();
-    const updatedUsers = users.filter(u => u.id !== id);
-    AUTH.setUsers(updatedUsers);
-    setAdminUsers(updatedUsers);
+    setAdminUsers(users.filter(u => u.id !== id));
   };
 
-  useEffect(() => {
-    if (auth) {
-      setWeatherLoading(true);
-      fetchWeather().then(d => { setWeather(d); setWeatherLoading(false); });
-    }
-  }, [auth]);
+  const td = today();
+  const plantDate = new Date("2026-03-10");
+  const dayNum = Math.max(1, Math.floor((Date.now() - plantDate.getTime()) / 86400000) + 1);
+  const newDefectCnt = defects.filter(d => !d.seen).length;
+
+  const NAV = [
+    { id: "dashboard", icon: "📊", label: "Dashboard" },
+    { sec: "பண்ணை மேலாண்மை" },
+    { id: "workers", icon: "👷", label: "Workers" },
+    { id: "attendance", icon: "📅", label: "Attendance" },
+    { id: "schedule", icon: "📋", label: "Daily Schedule" },
+    { id: "fertiliser", icon: "🧪", label: "Fertiliser & Pest" },
+    { sec: "கண்காணிப்பு" },
+    { id: "fields", icon: "🌾", label: "Fields & Crops" },
+    { id: "crop", icon: "🌱", label: "Crop Monitoring" },
+    { id: "reports", icon: "🚨", label: "Worker Reports", badge: newDefectCnt },
+    { sec: "வணிகம்" },
+    { id: "customers", icon: "🛒", label: "Customers" },
+    { sec: "நிர்வாகம்" },
+    { id: "products", icon: "🧪", label: "Products" },
+    { id: "weekly", icon: "📅", label: "Weekly Planner" },
+    { id: "admins", icon: "👤", label: "Admin Management" },
+    { id: "bills", icon: "📄", label: "Bill Management" },
+  ];
+
+  const TITLES = {
+    dashboard: "📊 Overview Dashboard",
+    workers: "👷 Worker Management",
+    attendance: "📅 Attendance Tracking",
+    schedule: "📋 Daily Schedule",
+    fertiliser: "🧪 Fertiliser & Pest Management",
+    crop: "🌱 Crop Monitoring",
+    reports: "🚨 Worker Field Reports",
+    customers: "🛒 Customer Management",
+    admins: "👤 Admin Management",
+    bills: "📄 Bill Management",
+    fields: "🌾 Field & Row Management",
+    products: "🧪 Product Management",
+    weekly: "📅 Weekly Planner"
+  };
+
+  const nav = (p) => { setPage(p);
+    setSbOpen(false); };
 
   const sharedProps = {
     td,
     dayNum,
-    workers, setWorkers,
-    attendance, setAttendance,
-    schedule, setSchedule,
-    plants, setPlants,
-    customers, setCustomers,
-    defects, setDefects,
-    pestLog, setPestLog,
-    bills, setBills,
-    weather, weatherLoading,
+    workers,
+    setWorkers,
+    attendance,
+    setAttendance,
+    schedule,
+    setSchedule,
+    plants,
+    setPlants,
+    customers,
+    setCustomers,
+    defects,
+    setDefects,
+    pestLog,
+    setPestLog,
+    bills,
+    setBills,
+    weather,
+    weatherLoading,
     auth,
-    adminUsers, setAdminUsers,
+    adminUsers,
+    setAdminUsers,
     createAdmin,
     deleteAdmin,
     handleLogout,
@@ -320,7 +401,6 @@ const App = () => {
       </div>
     );
   }
-
   return (
     <div style={{ display: "flex", width: "100%", minHeight: "100vh" }}>
       <button className="ham" onClick={() => setSbOpen(o => !o)}>☰</button>
