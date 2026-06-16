@@ -22,7 +22,7 @@ import ProductManagementPage from './pages/ProductManagementPage';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import QRManagementPage from './pages/QRManagementPage';
 
-import SyncStatusIndicator from './components/SyncStatusIndicator';
+import SyncStatusIndicator from '../components/SyncStatusIndicator';
 import { startSync, stopSync } from './services/syncEngine';
 
 const WEATHER_API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY || "YOUR_OPENWEATHER_API_KEY";
