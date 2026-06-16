@@ -4,7 +4,7 @@ import * as Recharts from 'recharts';
 import './styles.css';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, writeBatch, getDocs, query, orderBy, where } from "firebase/firestore";
 import { db } from "./firebase";
-import bcrypt from 'bcryptjs';
+import CryptoJS from 'crypto-js';
 
 import Modal, { Prog, Confirm, AiDots, Ring } from './CustomComponents';
 import { today, fmtDate, fmtNum } from './utils';
@@ -24,15 +24,12 @@ import ProductManagementPage from './pages/ProductManagementPage';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import QRManagementPage from './pages/QRManagementPage';
 
-// Phase 2 – Offline Sync imports
 import SyncStatusIndicator from './components/SyncStatusIndicator';
 import { startSync, stopSync } from './services/syncEngine';
 
 /* ═══════════════════════════════════════════════════
    CONSTANTS & HELPERS
 ══════════════════════════════════════════════════ */
-
-const SALT_ROUNDS = 10;
 
 /* ═══════════════════════════════════════════════════
    SEED DATA
@@ -73,21 +70,28 @@ const genSeeds = (n) => Array.from({ length: n }, (_, i) => ({
 }));
 
 /* ═══════════════════════════════════════════════════
-   AUTH CONTEXT & LOGIN (SECURE WITH BCRYPT)
+   AUTH CONTEXT & LOGIN (SECURE WITH CRYPTO-JS)
 ══════════════════════════════════════════════════ */
 const AUTH = {
   getUsers: () => {
     try {
       const v = localStorage.getItem("auth_users");
       return v != null ? JSON.parse(v) : [
-        { id: 1, username: "superadmin", password: bcrypt.hashSync("admin123", SALT_ROUNDS), role: "superadmin", name: "Super Admin", createdAt: "2026-01-01" }
+        { 
+          id: 1, 
+          username: "superadmin", 
+          password: CryptoJS.SHA256("admin123").toString(CryptoJS.enc.Hex), 
+          role: "superadmin", 
+          name: "Super Admin", 
+          createdAt: "2026-01-01" 
+        }
       ];
     } catch { return []; }
   },
   setUsers: (u) => {
     const hashedUsers = u.map(user => ({
       ...user,
-      password: bcrypt.hashSync(user.password, SALT_ROUNDS)
+      password: CryptoJS.SHA256(user.password).toString(CryptoJS.enc.Hex)
     }));
     try { localStorage.setItem("auth_users", JSON.stringify(hashedUsers)); } catch { }
   },
@@ -154,7 +158,6 @@ const App = () => {
   const [adminForm, setAdminForm] = useState({ username: "", password: "", name: "", role: "admin" });
   const [adminErr, setAdminErr] = useState("");
 
-  // Initialize sync engine when auth is ready
   useEffect(() => {
     if (auth) {
       startSync();
@@ -259,8 +262,8 @@ const App = () => {
 
   const handleLogin = () => {
     const users = AUTH.getUsers();
-    // SECURE: Compare password using bcrypt
-    const found = users.find(u => u.username === loginForm.username && bcrypt.compareSync(loginForm.password, u.password));
+    const hashedInput = CryptoJS.SHA256(loginForm.password).toString(CryptoJS.enc.Hex);
+    const found = users.find(u => u.username === loginForm.username && u.password === hashedInput);
     if (found) {
       const session = { id: found.id, username: found.username, role: found.role, name: found.name };
       AUTH.setSession(session);
@@ -292,7 +295,7 @@ const App = () => {
     const newUser = {
       id: Date.now(),
       username: adminForm.username,
-      password: adminForm.password,
+      password: CryptoJS.SHA256(adminForm.password).toString(CryptoJS.enc.Hex),
       role: adminForm.role,
       name: adminForm.name,
       createdAt: today()
