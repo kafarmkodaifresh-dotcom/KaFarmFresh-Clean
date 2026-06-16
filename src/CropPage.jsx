@@ -10,7 +10,6 @@ import PlantCell from './components/PlantCell';
 import { healthRules } from './utils/healthRules';
 import BulkQRPrint from './components/BulkQRPrint';
 import QRCodeGenerator from './components/QRCodeGenerator';
-import useAIPlantAnalysis from './hooks/useAIPlantAnalysis';
 
 const TOTAL_PLANTS = 10000;
 
@@ -45,17 +44,6 @@ const CropPage = ({ auth }) => {
   const [summary, setSummary] = useState({
     healthy: 0, issues: 0, flowering: 0, greenFruits: 0, ready: 0, totalYield: 0, totalRedFruits: 0, defectCounts: {}, topYieldPlants: [],
   });
-
-  // ─── AI Recommendation Hook ──────────────────────────────
-  const {
-    loading: aiAnalysisLoading,
-    error: aiAnalysisError,
-    response: aiAnalysisResponse,
-    providerUsed: aiProviderUsed,
-    triggerAnalysis,
-    approveRecommendation,
-    rejectRecommendation,
-  } = useAIPlantAnalysis();
 
   // ─── Load fields once ──────────────────────────────────
   useEffect(() => {
@@ -193,7 +181,7 @@ const CropPage = ({ auth }) => {
     yieldScorePercent: Math.round((summary.totalYield / (sampleSizeSafe * 300)) * 100),
   };
 
-  // ─── Bulk AI Recommendation ──────────────────────────
+  // ─── AI Handlers ──────────────────────────────────────
   const handleBulkAIRecommendation = async () => {
     const selected = getSelectedPlants();
     if (selected.length === 0) return alert('Please select at least one plant.');
@@ -214,7 +202,6 @@ const CropPage = ({ auth }) => {
     }
   };
 
-  // ─── AI Farm Advice ──────────────────────────────────
   const handleAIFarmAdvice = async () => {
     setAiLoading(true);
     setAiResp('');
@@ -227,59 +214,6 @@ const CropPage = ({ auth }) => {
       setAiResp('Failed to get AI farm advice.');
     } finally {
       setAiLoading(false);
-    }
-  };
-
-  // ─── Single Plant AI Analysis (Phase 5) ────────────────
-  const handleSingleAIAnalysis = async () => {
-    if (!selectedPlant) return;
-    try {
-      const result = await triggerAnalysis(
-        selectedFieldId,
-        selectedBlockId || null,
-        selectedRowId,
-        String(selectedPlant.index)
-      );
-      console.log('✅ AI analysis completed:', result);
-    } catch (err) {
-      console.error('❌ AI analysis failed:', err);
-    }
-  };
-
-  const handleApproveAI = async () => {
-    if (!selectedPlant || !aiAnalysisResponse) return;
-    try {
-      await approveRecommendation(
-        selectedFieldId,
-        selectedBlockId || null,
-        selectedRowId,
-        String(selectedPlant.index),
-        aiAnalysisResponse.id,
-        auth?.name || 'Admin'
-      );
-      alert('✅ Recommendation approved.');
-    } catch (err) {
-      console.error('Approval failed:', err);
-      alert('Failed to approve recommendation.');
-    }
-  };
-
-  const handleRejectAI = async () => {
-    if (!selectedPlant || !aiAnalysisResponse) return;
-    try {
-      await rejectRecommendation(
-        selectedFieldId,
-        selectedBlockId || null,
-        selectedRowId,
-        String(selectedPlant.index),
-        aiAnalysisResponse.id,
-        auth?.name || 'Admin',
-        'Rejected by admin'
-      );
-      alert('✅ Recommendation rejected.');
-    } catch (err) {
-      console.error('Rejection failed:', err);
-      alert('Failed to reject recommendation.');
     }
   };
 
@@ -578,9 +512,9 @@ const CropPage = ({ auth }) => {
           </button>
           <BulkQRPrint
             plants={getSelectedPlants().map(p => ({
-              fieldId: selectedFieldId,
-              blockId: selectedBlockId || null,
-              rowId: selectedRowId,
+              fieldName: fieldName,
+              blockName: blockName,
+              rowNumber: rowNumber,
               plantIndex: p.index,
             }))}
             onComplete={(count) => alert(`✅ ${count} QR codes printed!`)}
@@ -662,44 +596,6 @@ const CropPage = ({ auth }) => {
               />
             </div>
 
-            {/* ─── AI RECOMMENDATION PANEL (Phase 5) ────────── */}
-            <div className="card" style={{ marginTop: '15px', background: 'var(--primary-pale)', border: '1px solid var(--primary)' }}>
-              <div className="card-title">🤖 AI Recommendation</div>
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                <button
-                  className="btn btn-gold btn-sm"
-                  onClick={handleSingleAIAnalysis}
-                  disabled={aiAnalysisLoading}
-                >
-                  {aiAnalysisLoading ? 'Analyzing...' : 'Generate AI Recommendation'}
-                </button>
-                {aiAnalysisResponse && aiAnalysisResponse.status === 'pending' && (
-                  <>
-                    <button className="btn btn-primary btn-sm" onClick={handleApproveAI}>✅ Approve</button>
-                    <button className="btn btn-danger btn-sm" onClick={handleRejectAI}>❌ Reject</button>
-                  </>
-                )}
-              </div>
-              {aiAnalysisError && (
-                <div className="alert a-err" style={{ marginBottom: '10px' }}>{aiAnalysisError}</div>
-              )}
-              {aiAnalysisResponse && (
-                <div className="ai-box" style={{ marginTop: '10px' }}>
-                  <div className="ai-lbl">
-                    🤖 AI Suggestion (via {aiAnalysisResponse.provider})
-                    <span style={{ float: 'right', fontSize: '10px' }}>
-                      Status: {aiAnalysisResponse.status}
-                    </span>
-                  </div>
-                  <div className="ai-txt">
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
-                      {JSON.stringify(aiAnalysisResponse.response, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="card" style={{ marginTop: '15px', background: 'var(--gold-pale)', border: '1px solid var(--gold)' }}>
               <h4 style={{ marginBottom: '10px', fontSize: '14px' }}>🧪 Schedule Nutrient Application</h4>
               <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>
@@ -710,6 +606,18 @@ const CropPage = ({ auth }) => {
                 <button className="btn btn-sage btn-sm" onClick={() => flagNutrient(selectedFieldId, selectedRowId, selectedPlant.index, 'Nitrogen (NIXI)')}>🌱 Flag for Nitrogen</button>
                 <button className="btn btn-gold btn-sm" onClick={() => flagNutrient(selectedFieldId, selectedRowId, selectedPlant.index, 'Potassium (SOP)')}>🌱 Flag for Potassium</button>
               </div>
+            </div>
+
+            <div className="card" style={{ marginTop: '15px', background: 'var(--primary-pale)' }}>
+              <button className="btn btn-gold btn-sm" onClick={() => handleSingleAIRecommendation(selectedPlant)} disabled={aiLoading}>
+                {aiLoading ? '🤔 Analyzing...' : '🤖 AI Recommendation'}
+              </button>
+              {aiResp && (
+                <div className="ai-box" style={{ marginTop: '10px' }}>
+                  <div className="ai-lbl">AI Suggestion</div>
+                  <div className="ai-txt">{aiResp}</div>
+                </div>
+              )}
             </div>
           </div>
         )}

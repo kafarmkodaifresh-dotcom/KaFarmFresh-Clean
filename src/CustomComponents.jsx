@@ -52,5 +52,4 @@ export const Prog = ({ pct, color }) => (
   <div className="prog"><div className="prog-bar" style={{ width: Math.min(100, pct || 0) + "%", background: color || "var(--primary)" }} /></div>
 );
 
-// ✅ CRITICAL: Add a default export to force Vite to recognize the file
 export default Modal;

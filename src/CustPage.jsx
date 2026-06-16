@@ -30,9 +30,14 @@ const CustPage = ({ customers, setCustomers, auth }) => {
   const f = (k, v) => { setForm(p => ({ ...p, [k]: v }));
     setErr(""); };
 
+  // ✅ THESE THREE CALCULATIONS WERE MISSING
   const activeCustomers = customers.filter(c => !c.deletedAt);
   const deletedCustomers = customers.filter(c => c.deletedAt);
   const displayedCustomers = showDeleted ? deletedCustomers : activeCustomers;
+
+  const totalBoxes = customers.reduce((a, c) => a + c.orders.reduce((b, o) => b + (o.boxes || 0), 0), 0);
+  const totalRev = totalBoxes * 120;
+  const premiumRev = customers.filter(c => c.type === "premium").reduce((a, c) => a + c.orders.reduce((b, o) => b + (o.boxes || 0) * 120, 0), 0);
 
   const handleSelectAll = () => {
     const newSelectAll = !selectAll;

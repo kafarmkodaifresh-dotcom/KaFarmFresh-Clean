@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { QRCodeCanvas } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 
+// ─── Layout Configuration ─────────────────────────────────────
+// A4 dimensions: 210mm width, 297mm height.
+// Using 5mm margins on each side.
 const PAGE_WIDTH_MM = 210;
 const PAGE_HEIGHT_MM = 297;
 const MARGIN_MM = 5;
@@ -10,10 +13,14 @@ const GAP_MM = 4;
 const COLS = 3;
 const ROWS = 5;
 
+// ─── Calculate cell dimensions to fit 3x5 grid ──────────────
+// Total available space = Page size minus margins.
 const AVAILABLE_WIDTH = PAGE_WIDTH_MM - 2 * MARGIN_MM;
 const AVAILABLE_HEIGHT = PAGE_HEIGHT_MM - 2 * MARGIN_MM;
 const CELL_WIDTH = (AVAILABLE_WIDTH - (COLS - 1) * GAP_MM) / COLS;
 const CELL_HEIGHT = (AVAILABLE_HEIGHT - (ROWS - 1) * GAP_MM) / ROWS;
+// The QR code will fill most of the cell, leaving space for the label.
+// We allocate 8mm for the label at the bottom.
 const QR_SIZE_MM = Math.min(CELL_WIDTH, CELL_HEIGHT - 8);
 
 export const generateBulkQRPrint = async (plants) => {
@@ -21,6 +28,7 @@ export const generateBulkQRPrint = async (plants) => {
     throw new Error('No plants provided for QR generation.');
   }
 
+  // ─── 1. Create a hidden container to render QR codes ──────
   const container = document.createElement('div');
   container.style.position = 'absolute';
   container.style.left = '-9999px';
@@ -35,7 +43,15 @@ export const generateBulkQRPrint = async (plants) => {
   const roots = [];
 
   try {
+    // ─── 2. Render each QR code into its grid cell ──────────
     plants.forEach((plant, index) => {
+      const textBelow = [
+        plant.fieldName || plant.fieldId || '',
+        plant.blockName || plant.blockId || '',
+        plant.rowNumber ? `Row ${plant.rowNumber}` : plant.rowId || '',
+        plant.plantIndex ? `Plant ${plant.plantIndex}` : ''
+      ].filter(Boolean).join(' | ');
+
       const plantIdentifier = [plant.fieldId, plant.blockId, plant.rowId, plant.plantIndex].filter(Boolean).join('|');
 
       const cell = document.createElement('div');
@@ -55,9 +71,9 @@ export const generateBulkQRPrint = async (plants) => {
       const qrDiv = document.createElement('div');
       qrDiv.style.cssText = `
         display: flex;
-        flexDirection: column;
-        alignItems: center;
-        justifyContent: center;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
         height: 100%;
         width: 100%;
       `;
@@ -68,7 +84,7 @@ export const generateBulkQRPrint = async (plants) => {
       const root = createRoot(qrDiv);
       roots.push(root);
       root.render(
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', height: '100%', width: '100%' }}>
           <div style={{ height: `${QR_SIZE_MM}mm`, width: `${QR_SIZE_MM}mm`, flexShrink: 0 }}>
             <QRCodeCanvas
               value={plantIdentifier}
@@ -80,8 +96,8 @@ export const generateBulkQRPrint = async (plants) => {
               style={{ width: '100%', height: '100%' }}
             />
           </div>
-          <div style={{ fontSize: '6px', fontFamily: 'monospace', color: '#555', marginTop: '2mm', wordBreak: 'break-all', textAlign: 'center', maxWidth: '100%' }}>
-            {plantIdentifier}
+          <div style={{ fontSize: '6px', fontFamily: 'monospace', color: '#555', marginTop: '1mm', wordBreak: 'break-all', textAlign: 'center', lineHeight: '1.2', maxWidth: '100%' }}>
+            {textBelow}
           </div>
         </div>
       );
