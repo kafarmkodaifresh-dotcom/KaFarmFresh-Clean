@@ -24,7 +24,7 @@ import ProductManagementPage from './pages/ProductManagementPage';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import QRManagementPage from './pages/QRManagementPage';
 
-import SyncStatusIndicator from './Components/SyncStatusIndicator';
+import SyncStatusIndicator from './components/SyncStatusIndicator';
 import { startSync, stopSync } from './services/syncEngine';
 
 /* ═══════════════════════════════════════════════════
